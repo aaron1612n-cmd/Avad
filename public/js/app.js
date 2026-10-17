@@ -1,4 +1,4 @@
-import { state, mode, hooks, load, loadServer, save, board, normalize, normalizeItem, saveBlob, dropBlob, exportAll, importBoards, encodeBoard, decodeBoard } from "./store.js";
+import { state, mode, hooks, load, loadServer, save, board, normalize, normalizeItem, saveBlob, dropBlob, shrinkImage, exportAll, importBoards, encodeBoard, decodeBoard } from "./store.js";
 import { detect, detectMany, detectFile, resolveZone } from "./detect.js";
 import { h, renderBody, typeLabel, timers, resolveSrc, htmlDoc } from "./render.js";
 
@@ -32,11 +32,24 @@ function dialog(build) {
   return new Promise((resolve) => {
     el.dlgForm.replaceChildren();
     build(el.dlgForm);
-    el.dlg.addEventListener("close", () => resolve(el.dlg.returnValue), { once: true });
     el.dlg.returnValue = "";
-    el.dlg.showModal();
+    const done = () => resolve(el.dlg.returnValue);
+    el.dlg.addEventListener("close", done, { once: true });
+    // Close it ourselves so older mobile browsers that lack <dialog> still work.
+    el.dlgForm.onsubmit = (e) => {
+      e.preventDefault();
+      el.dlg.returnValue = e.submitter?.value ?? "";
+      if (el.dlg.close) el.dlg.close();
+      else { el.dlg.removeAttribute("open"); el.dlg.dispatchEvent(new Event("close")); }
+    };
+    if (el.dlg.showModal) el.dlg.showModal();
+    else el.dlg.setAttribute("open", "");
   });
 }
+
+// If something breaks on a phone, say so instead of silently doing nothing.
+window.addEventListener("error", (e) => toast("Error: " + String(e.message || e.error).slice(0, 90)));
+window.addEventListener("unhandledrejection", (e) => toast("Error: " + String(e.reason?.message || e.reason).slice(0, 90)));
 
 const field = (label, control) => h("label", { text: label }, control);
 const btn = (text, value, cls = "outline") => h("button", { type: "submit", value, class: cls, text, formnovalidate: value !== "ok" });
@@ -64,6 +77,7 @@ async function boot() {
     try { sharedBoard = await decodeBoard(m[1]); } catch { toast("That share link is broken"); }
   }
   renderAll();
+  setTimeout(optimizeExisting, 1500);
 }
 
 async function seed() {
@@ -216,6 +230,34 @@ async function unfurl(item) {
   } catch {}
 }
 
+// Shrink photos that were uploaded before resizing existed, one at a time, so old boards get fast too.
+let optimizing = false;
+async function optimizeExisting() {
+  if (optimizing || !mode.server || !mode.admin) return;
+  const todo = state.boards.flatMap((b) => b.items).filter((i) => i.type === "image" && i.src?.startsWith("/api/file/") && (i.meta?.size || 0) > 400 * 1024 && !i.meta.opt);
+  if (!todo.length) return;
+  optimizing = true;
+  toast("Making photos load faster…");
+  for (const item of todo) {
+    try {
+      const blob = await (await fetch(item.src)).blob();
+      const small = await shrinkImage(blob);
+      if (small !== blob) {
+        const saved = await saveBlob(small);
+        dropBlob(item);
+        item.src = saved.src;
+        item.meta = { ...item.meta, size: saved.size, opt: 1 };
+      } else {
+        item.meta = { ...item.meta, opt: 1 };
+      }
+      save();
+      refreshPlate(item);
+    } catch {}
+  }
+  optimizing = false;
+  toast("Photos are faster now");
+}
+
 // ---------- boards ----------
 function switchBoard(id) {
   if (sharedBoard) leaveShared();
@@ -294,7 +336,10 @@ async function addFiles(files) {
     if (asText) {
       partial.text = await f.text();
     } else {
-      Object.assign(partial, await saveBlob(f));
+      const saved = await saveBlob(f);
+      partial.meta = { ...partial.meta, size: saved.size, opt: 1 };
+      delete saved.size;
+      Object.assign(partial, saved);
     }
     addItem(partial, { quiet: list.length > 1 });
     added++;
@@ -590,6 +635,7 @@ function syncSelect() {
   $("selectMode").setAttribute("aria-pressed", String(selecting));
   el.wall.classList.toggle("selecting", selecting);
   $("selbar").hidden = !selecting;
+  document.body.classList.toggle("selecting-on", selecting);
   $("selCount").textContent = `${selected.size} selected`;
   for (const id of ["selUp", "selDown", "selMove", "selDelete"]) $(id).disabled = !selected.size;
   for (const p of el.wall.children) p.classList.toggle("sel", selected.has(p.dataset.id));

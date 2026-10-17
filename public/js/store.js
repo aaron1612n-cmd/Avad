@@ -120,17 +120,40 @@ export const putFile = (id, blob) => tx("readwrite", (s) => s.put(blob, id));
 export const getFile = (id) => tx("readonly", (s) => s.get(id));
 export const delFile = (id) => tx("readwrite", (s) => s.delete(id));
 
+/** Shrink big photos before they are stored: phones make 12 megapixel JPEGs that are slow to decode on a wall of small cards. */
+export async function shrinkImage(blob, max = 1800) {
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(blob.type || "")) return blob;
+  if (blob.size < 250 * 1024) return blob;
+  try {
+    const bmp = await createImageBitmap(blob, { imageOrientation: "from-image" });
+    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    const out = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.86));
+    return out && out.size < blob.size * 0.8 ? out : blob;
+  } catch {
+    return blob;
+  }
+}
+
 /** Store a picked file. Returns the fields to merge into the item: `src` (server) or `file` (this browser). */
 export async function saveBlob(blob) {
+  blob = await shrinkImage(blob);
   if (mode.server) {
     const id = uid().replace(/[^a-z0-9]/g, "");
     const r = await fetch(`/api/file/${id}`, { method: "PUT", headers: { "content-type": blob.type || "application/octet-stream" }, body: blob });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "upload failed");
-    return { src: `/api/file/${id}` };
+    return { src: `/api/file/${id}`, size: blob.size };
   }
   const file = uid();
   await putFile(file, blob);
-  return { file };
+  return { file, size: blob.size };
 }
 
 export function dropBlob(item) {

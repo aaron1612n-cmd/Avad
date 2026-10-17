@@ -261,7 +261,7 @@ body.is-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .selbar .outline, .selbar .solid { min-height: 38px; padding: 6px 12px; }
 .selbar button:disabled { opacity: .4; pointer-events: none; }
 .top-meta [aria-pressed="true"] { background: var(--ink); color: var(--paper); }
-body:has(.selbar:not([hidden])) .wall { padding-bottom: 90px; }
+body.selecting-on .wall { padding-bottom: 90px; }
 
 /* ---------- widgets ---------- */
 .wx .big, .clock .big { overflow-wrap: anywhere; }
