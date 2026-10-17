@@ -81,8 +81,7 @@ function renderAll() {
 function renderRail() {
   el.boards.replaceChildren(...state.boards.map((b) => {
     const li = h("li", { "aria-current": String(!sharedBoard && b.id === state.current) },
-      h("button", { class: "pick", type: "button", onclick: () => switchBoard(b.id) }, h("span", { text: b.name }), h("span", { class: "n", text: String(b.items.length) })),
-      h("button", { class: "x", type: "button", "aria-label": `Delete ${b.name}`, onclick: () => removeBoard(b.id), text: "del" }));
+      h("button", { class: "pick", type: "button", onclick: () => switchBoard(b.id) }, h("span", { text: b.name }), h("span", { class: "n", text: String(b.items.length) })));
     return li;
   }));
 }
@@ -112,12 +111,11 @@ function plateFor(item, idx, { stamp = false } = {}) {
     h("button", { type: "button", "aria-label": "Open on stage", text: "view", onclick: () => openStage(item.id) }),
     h("button", { type: "button", "aria-label": "Edit", text: "edit", onclick: () => editItem(item.id) }));
   p.append(
-    h("header", { class: "plate-head" }, h("span", { text: "No. " + String(idx + 1).padStart(3, "0") }), h("span", { text: typeLabel(item.type) })),
+    h("header", { class: "plate-head" }, h("span", { text: "No. " + String(idx + 1).padStart(3, "0") }), h("span", { class: "plate-tools" }, h("span", { class: "kind", text: typeLabel(item.type) }), acts)),
     renderBody(item, { toast }),
     h("footer", { class: "plate-foot" },
       item.title ? h("h3", { class: "plate-title", text: item.title }) : null,
-      item.caption ? h("p", { class: "plate-cap", text: item.caption }) : null),
-    acts);
+      item.caption ? h("p", { class: "plate-cap", text: item.caption }) : null));
   if (ro) p.addEventListener("dblclick", () => openStage(item.id));
   return p;
 }
@@ -169,8 +167,11 @@ function switchBoard(id) {
 
 async function renameBoard() {
   const b = board();
-  const name = await askText("Rename board", b.name);
-  if (name) { b.name = name; save(); renderRail(); renderTop(); }
+  const input = h("input", { name: "v", value: b.name, maxlength: 80, required: true });
+  const r = await dialog((f) => f.append(h("h2", { text: "Board" }), field("Name", input),
+    h("div", { class: "row" }, h("span", { class: "sp" }, btn("Delete board", "del")), btn("Cancel", "no"), btn("Save", "ok", "solid"))));
+  if (r === "ok" && input.value.trim()) { b.name = input.value.trim(); save(); renderRail(); renderTop(); }
+  else if (r === "del") removeBoard(b.id);
 }
 
 async function newBoard() {

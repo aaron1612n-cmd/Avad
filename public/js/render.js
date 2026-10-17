@@ -66,7 +66,11 @@ export function parseCsv(text) {
 const fmtSize = (n) => (n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB");
 
 // Only ever put http(s) URLs into href/src.
-const safe = (u) => (parseUrl(u || "") ? parseUrl(u).href : "");
+const safe = (u) => {
+  if (typeof u === "string" && /^\/(?!\/)/.test(u)) return u; // same-site path
+  const p = parseUrl(u || "");
+  return p ? p.href : "";
+};
 
 async function resolveSrc(item) {
   return item.file ? fileUrl(item.file) : safe(item.src);
@@ -84,7 +88,7 @@ function contrast(hex) {
 /** Build the body of a plate. `big` is the full-screen stage version. */
 export function renderBody(item, { big = false, toast = () => {} } = {}) {
   const box = h("div", { class: "plate-body" });
-  const set = (...n) => box.replaceChildren(...n);
+  const set = (...n) => box.replaceChildren(...n.filter(Boolean));
 
   switch (item.type) {
     case "image": {

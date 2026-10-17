@@ -8,7 +8,7 @@
         { "type": "color", "text": "#C93A1B", "title": "Vermilion" },
         { "type": "countdown", "meta": { "date": "2027-01-01T00:00:00" }, "title": "New year" },
         { "type": "code", "meta": { "lang": "sh" }, "title": "Ship it", "text": "npm install\nnpx wrangler dev\nnpx wrangler deploy" },
-        { "type": "link", "src": "https://developers.cloudflare.com/workers/", "title": "Cloudflare Workers" },
+        { "type": "link", "src": "https://developers.cloudflare.com/workers/" },
         { "type": "csv", "title": "Things on this wall", "text": "type,source,renders as\nnote,typed,text\nimage,url or file,picture\nvideo,url or file,player\nlink,url,card\nyoutube,url,player\ncsv,paste,table" },
         { "type": "image", "src": "/samples/plate-two.svg", "title": "Plate two" },
         { "type": "json", "title": "Any JSON", "text": "{\n  \"name\": \"avad\",\n  \"host\": \"cloudflare workers\",\n  \"build\": null,\n  \"types\": [\"note\", \"image\", \"video\"]\n}" },
