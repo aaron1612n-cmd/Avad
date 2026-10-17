@@ -18,9 +18,9 @@ Chat: "new website idea, a website that displays anything I want". Keep <1,500 t
 
 ## State
 - Built and tested locally with `npx wrangler dev` + Playwright (desktop 1366, mobile 390, dark). No console errors; upload/reload/share/edit verified.
-- Branch `claude/nice-volta-c6agz9`.
+- Branch `claude/nice-volta-c6agz9`. No `main` exists on GitHub; PR blocked until user creates it or allows me to.
 
 ## Open / next
-- Not yet deployed: needs `npx wrangler login` then `npm run deploy` (user's Cloudflare account).
+- DEPLOYED: https://avad.galaxica.workers.dev (Worker `avad`). Redeploy: `npm run deploy` (CLOUDFLARE_API_TOKEN is an env var in the cloud environment; never commit it).
 - Ideas: KV-backed short share links and cross-device sync; drag reorder; more types (map, tweet, 3D).
 - Unverified: touch gestures on a real phone; HTML-snippet iframe sizing on mobile full-page capture.
