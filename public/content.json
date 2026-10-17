@@ -1,0 +1,23 @@
+{
+  "boards": [
+    {
+      "name": "Start here",
+      "items": [
+        { "type": "note", "title": "What this is", "text": "A wall for **whatever** you want to look at.\n\n- Paste a link, image, video or file\n- Type a note, `#hex` colour, or `until 2027-01-01`\n- Drag things in from anywhere\n\nEdit `public/content.json` to change what loads first." },
+        { "type": "image", "src": "/samples/plate-one.svg", "title": "Plate one", "caption": "Local file in the repo, served by Cloudflare." },
+        { "type": "color", "text": "#C93A1B", "title": "Vermilion" },
+        { "type": "countdown", "meta": { "date": "2027-01-01T00:00:00" }, "title": "New year" },
+        { "type": "code", "meta": { "lang": "sh" }, "title": "Ship it", "text": "npm install\nnpx wrangler dev\nnpx wrangler deploy" },
+        { "type": "link", "src": "https://developers.cloudflare.com/workers/", "title": "Cloudflare Workers" },
+        { "type": "csv", "title": "Things on this wall", "text": "type,source,renders as\nnote,typed,text\nimage,url or file,picture\nvideo,url or file,player\nlink,url,card\nyoutube,url,player\ncsv,paste,table" },
+        { "type": "image", "src": "/samples/plate-two.svg", "title": "Plate two" },
+        { "type": "json", "title": "Any JSON", "text": "{\n  \"name\": \"avad\",\n  \"host\": \"cloudflare workers\",\n  \"build\": null,\n  \"types\": [\"note\", \"image\", \"video\"]\n}" },
+        { "type": "html", "title": "Sandboxed HTML", "text": "<body style=\"margin:0;display:grid;place-items:center;height:100vh;background:#1D1B16;color:#ECE5D4;font:600 28px Georgia,serif\"><span>runs in a cage</span></body>" }
+      ]
+    },
+    {
+      "name": "Scratch",
+      "items": []
+    }
+  ]
+}
