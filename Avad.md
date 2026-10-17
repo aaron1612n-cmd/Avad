@@ -20,12 +20,19 @@ Chat: "new website idea, a website that displays anything I want". Keep <1,500 t
 - Built and tested locally with `npx wrangler dev` + Playwright (desktop 1366, mobile 390, dark). No console errors; upload/reload/share/edit verified.
 - Branch `claude/nice-volta-c6agz9`. No `main` exists on GitHub; PR blocked until user creates it or allows me to.
 
+## Access model (v5)
+- Public can read; only the owner edits. Boards in KV namespace `BOARDS` (key `state`, `{rev, boards}`; files at `file:<id>`, 20 MB max each). Worker secret `ADMIN_PASSWORD` (set with `wrangler secret put`; never in repo). Login sets 30-day HttpOnly cookie (HMAC of password, so changing the password signs everyone out). 8 wrong tries/15 min per IP.
+- Client modes: `server` (KV configured; non-owner is read-only, hides edit UI, shows "Owner sign in") or `local` (no KV; per-browser storage, used by plain static hosting).
+- Writes check same-origin + cookie; `rev` guards against two devices overwriting each other (409 -> reload). `/api/unfurl` is owner-only.
+- Local dev: `.dev.vars` (gitignored) holds a test ADMIN_PASSWORD.
+
 ## Changelog
-- v4: security pass. Edits are per-browser only (no server write path, so visitors cannot change the live site or each other). Added `_headers` (nosniff, frame-ancestors none, referrer policy) and same-origin-only `/api/unfurl`. Open question: does user want a private/read-only public site (needs KV + password)?
+- v5: KV storage + owner password + read-only public view.
+- v4: security pass. Edits are per-browser only (no server write path, so visitors cannot change the live site or each other). Added `_headers` (nosniff, frame-ancestors none, referrer policy) and same-origin-only `/api/unfurl`. User chose option 2 (public read-only, owner edits) -> built in v5.
 - v3: visible Rename/Delete buttons for boards, delete button on each plate.
 - v2: Cancel in dialogs no longer triggers form validation (`formnovalidate`; Address field is plain text, not type=url). Photos/Files are `<label for=input>` buttons with visually-hidden inputs (reliable on iOS). Plainer wording: Slideshow, Photos, Files, Save/Restore backup. User found v1 confusing: keep copy plain, avoid jargon.
 
 ## Open / next
 - DEPLOYED: https://avad.galaxica.workers.dev (Worker `avad`). Redeploy: `npm run deploy` (CLOUDFLARE_API_TOKEN is an env var in the cloud environment; never commit it).
-- Ideas: KV-backed short share links and cross-device sync; drag reorder; more types (map, tweet, 3D).
+- Ideas: drag reorder; R2 for big files; custom domain; more types (map, tweet, 3D).
 - Unverified: touch gestures on a real phone; HTML-snippet iframe sizing on mobile full-page capture.

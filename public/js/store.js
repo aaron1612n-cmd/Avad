@@ -5,6 +5,34 @@ export const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toS
 
 export const state = { boards: [], current: null };
 
+// "server" mode: boards live on Cloudflare KV; everyone reads, only the signed-in owner writes.
+// "local" mode: no server storage configured (e.g. plain static hosting), boards live in this browser.
+export const mode = { server: false, admin: false, rev: 0 };
+export const hooks = { onConflict() {}, onAuthLost() {} };
+const CURRENT = "avad:current";
+
+export async function loadServer() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    if (!r.ok) return false;
+    const d = await r.json();
+    if (!d.configured) return false;
+    mode.server = true;
+    mode.admin = !!d.admin;
+    mode.rev = d.rev || 0;
+    if (d.boards?.length) {
+      state.boards = d.boards;
+      let cur = null;
+      try { cur = localStorage.getItem(CURRENT); } catch {}
+      state.current = d.boards.some((b) => b.id === cur) ? cur : d.boards[0].id;
+      return "ok";
+    }
+    return "empty";
+  } catch {
+    return false;
+  }
+}
+
 export function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || "null");
@@ -18,13 +46,30 @@ export function load() {
 }
 
 let timer;
+let queue = Promise.resolve();
 export function save() {
   clearTimeout(timer);
-  timer = setTimeout(() => {
+  timer = setTimeout(flush, 300);
+}
+
+function flush() {
+  if (!mode.server) {
     try {
       localStorage.setItem(KEY, JSON.stringify({ boards: state.boards, current: state.current }));
     } catch {}
-  }, 120);
+    return;
+  }
+  try { localStorage.setItem(CURRENT, state.current || ""); } catch {}
+  if (!mode.admin) return;
+  queue = queue.then(async () => {
+    try {
+      const body = JSON.stringify({ rev: mode.rev, boards: state.boards });
+      const r = await fetch("/api/state", { method: "PUT", headers: { "content-type": "application/json" }, body });
+      if (r.ok) mode.rev = (await r.json()).rev;
+      else if (r.status === 409) hooks.onConflict();
+      else if (r.status === 401) { mode.admin = false; hooks.onAuthLost(); }
+    } catch {}
+  });
 }
 
 export const board = () => state.boards.find((b) => b.id === state.current) || state.boards[0];
@@ -74,6 +119,24 @@ export const putFile = (id, blob) => tx("readwrite", (s) => s.put(blob, id));
 export const getFile = (id) => tx("readonly", (s) => s.get(id));
 export const delFile = (id) => tx("readwrite", (s) => s.delete(id));
 
+/** Store a picked file. Returns the fields to merge into the item: `src` (server) or `file` (this browser). */
+export async function saveBlob(blob) {
+  if (mode.server) {
+    const id = uid().replace(/[^a-z0-9]/g, "");
+    const r = await fetch(`/api/file/${id}`, { method: "PUT", headers: { "content-type": blob.type || "application/octet-stream" }, body: blob });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "upload failed");
+    return { src: `/api/file/${id}` };
+  }
+  const file = uid();
+  await putFile(file, blob);
+  return { file };
+}
+
+export function dropBlob(item) {
+  if (item.file) delFile(item.file).catch(() => {});
+  else if (mode.server && mode.admin && item.src?.startsWith("/api/file/")) fetch(item.src, { method: "DELETE" }).catch(() => {});
+}
+
 const urls = new Map();
 export async function fileUrl(id) {
   if (urls.has(id)) return urls.get(id);
@@ -103,6 +166,11 @@ export async function exportAll() {
         const blob = await getFile(it.file);
         if (blob) out.dataUrl = await toDataUrl(blob);
         delete out.file;
+      } else if (it.src?.startsWith("/api/file/")) {
+        try {
+          out.dataUrl = await toDataUrl(await (await fetch(it.src)).blob());
+          delete out.src;
+        } catch {}
       }
       items.push(out);
     }
@@ -119,8 +187,7 @@ export async function importBoards(data) {
       const it = normalizeItem(ri);
       if (ri.dataUrl) {
         const blob = await (await fetch(ri.dataUrl)).blob();
-        it.file = uid();
-        await putFile(it.file, blob);
+        Object.assign(it, await saveBlob(blob));
       }
       b.items.push(it);
     }

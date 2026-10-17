@@ -1,4 +1,4 @@
-import { state, load, save, board, uid, normalize, normalizeItem, putFile, delFile, exportAll, importBoards, encodeBoard, decodeBoard } from "./store.js";
+import { state, mode, hooks, load, loadServer, save, board, normalize, normalizeItem, saveBlob, dropBlob, exportAll, importBoards, encodeBoard, decodeBoard } from "./store.js";
 import { detect, detectFile } from "./detect.js";
 import { h, renderBody, typeLabel, timers } from "./render.js";
 
@@ -13,7 +13,7 @@ let sharedBoard = null;
 let filter = null;
 const fetched = new Map();
 const view = () => sharedBoard || board();
-const readonly = () => !!sharedBoard;
+const readonly = () => !!sharedBoard || (mode.server && !mode.admin);
 
 // ---------- small helpers ----------
 let toastTimer;
@@ -50,7 +50,11 @@ async function confirm(title) {
 
 // ---------- boot ----------
 async function boot() {
-  if (!load()) await seed();
+  hooks.onConflict = () => { toast("Changed on another device. Reloading."); setTimeout(() => location.reload(), 1200); };
+  hooks.onAuthLost = () => { toast("Signed out. Sign in again to edit."); renderAll(); };
+  const srv = await loadServer();
+  if (srv === false) { if (!load()) await seed(); }
+  else if (srv === "empty") { await seed(); }
   const m = location.hash.match(/^#b=(.+)$/);
   if (m) {
     try { sharedBoard = await decodeBoard(m[1]); } catch { toast("That share link is broken"); }
@@ -71,7 +75,15 @@ async function seed() {
 }
 
 // ---------- rendering ----------
+function renderChrome() {
+  const owner = !mode.server || mode.admin;
+  for (const id of ["newBoard", "import", "reset", "export"]) $(id).hidden = !owner || !!sharedBoard;
+  $("auth").hidden = !mode.server;
+  $("auth").textContent = mode.admin ? "Sign out" : "Owner sign in";
+}
+
 function renderAll() {
+  renderChrome();
   renderRail();
   renderTop();
   renderFilters();
@@ -92,7 +104,7 @@ function renderTop() {
   el.count.textContent = `${b.items.length} ${b.items.length === 1 ? "plate" : "plates"}`;
   $("present").disabled = !b.items.length;
   $("renameBoard").hidden = $("deleteBoard").hidden = readonly();
-  el.shared.hidden = !readonly();
+  el.shared.hidden = !sharedBoard;
   el.bar.hidden = readonly();
   document.title = `${b.name} · Avad`;
 }
@@ -132,7 +144,7 @@ function renderWall(stampId) {
   });
   el.wall.replaceChildren(...plates);
   el.empty.hidden = b.items.length > 0 || readonly();
-  b.items.filter((i) => i.type === "link" && !i.meta.fetched).forEach(unfurl);
+  if (!readonly()) b.items.filter((i) => i.type === "link" && !i.meta.fetched).forEach(unfurl);
   if (stampId) el.wall.querySelector(`[data-id="${stampId}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
@@ -189,7 +201,7 @@ async function removeBoard(id) {
   const b = state.boards.find((x) => x.id === id);
   if (state.boards.length === 1) return toast("Make a second board first (+ New board)");
   if (!(await confirm(`Delete “${b.name}” and its ${b.items.length} plates?`))) return;
-  b.items.forEach((i) => i.file && delFile(i.file));
+  b.items.forEach(dropBlob);
   state.boards = state.boards.filter((x) => x.id !== id);
   if (state.current === id) state.current = state.boards[0].id;
   save();
@@ -229,13 +241,12 @@ async function addFiles(files) {
     if (asText) {
       partial.text = await f.text();
     } else {
-      partial.file = uid();
-      await putFile(partial.file, f);
+      Object.assign(partial, await saveBlob(f));
     }
     addItem(partial, { quiet: list.length > 1 });
     added++;
-   } catch {
-    toast("Could not add " + (f.name || "that file"));
+   } catch (e) {
+    toast(e?.message && e.message !== "upload failed" ? e.message : "Could not add " + (f.name || "that file"));
    }
   }
   if (list.length > 1) renderWall();
@@ -301,7 +312,7 @@ async function editItem(id) {
   const item = b.items[i];
   const title = h("input", { value: item.title, maxlength: 120 });
   const cap = h("input", { value: item.caption, maxlength: 240 });
-  const src = URL_TYPES.has(item.type) && !item.file ? h("input", { value: item.src, type: "text", inputmode: "url", autocapitalize: "off", autocomplete: "off" }) : null;
+  const src = URL_TYPES.has(item.type) && !item.file && !item.src.startsWith("/api/file/") ? h("input", { value: item.src, type: "text", inputmode: "url", autocapitalize: "off", autocomplete: "off" }) : null;
   const text = TEXT_TYPES.has(item.type) ? h("textarea", { spellcheck: "false" }) : null;
   if (text) text.value = item.text;
   const when = item.type === "countdown" ? h("input", { type: "datetime-local", value: toLocal(item.meta.date) }) : null;
@@ -328,7 +339,7 @@ async function editItem(id) {
   } else if (r === "up" && i > 0) [b.items[i - 1], b.items[i]] = [b.items[i], b.items[i - 1]];
   else if (r === "down" && i < b.items.length - 1) [b.items[i + 1], b.items[i]] = [b.items[i], b.items[i + 1]];
   else if (r === "del") {
-    if (item.file) delFile(item.file);
+    dropBlob(item);
     b.items.splice(i, 1);
   } else return;
   save();
@@ -346,7 +357,7 @@ async function removeItem(id) {
   const b = board();
   const i = b.items.findIndex((x) => x.id === id);
   if (i < 0 || !(await confirm("Delete this plate?"))) return;
-  if (b.items[i].file) delFile(b.items[i].file);
+  dropBlob(b.items[i]);
   b.items.splice(i, 1);
   save();
   renderAll();
@@ -468,11 +479,25 @@ $("importFile").addEventListener("change", async (e) => {
 
 $("reset").addEventListener("click", async () => {
   if (!(await confirm("Replace everything with content.json?"))) return;
-  state.boards.forEach((b) => b.items.forEach((i) => i.file && delFile(i.file)));
+  state.boards.forEach((b) => b.items.forEach(dropBlob));
   fetched.clear();
   if (sharedBoard) leaveShared();
   await seed();
   renderAll();
+});
+
+$("auth").addEventListener("click", async () => {
+  if (mode.admin) {
+    await fetch("/api/logout", { method: "POST" });
+    location.reload();
+    return;
+  }
+  const input = h("input", { type: "password", name: "p", autocomplete: "current-password", required: true });
+  const r = await dialog((f) => f.append(h("h2", { text: "Owner sign in" }), field("Password", input), h("div", { class: "row" }, btn("Cancel", "no"), btn("Sign in", "ok", "solid"))));
+  if (r !== "ok") return;
+  const res = await fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: input.value }) });
+  if (res.ok) location.reload();
+  else toast((await res.json().catch(() => ({}))).error || "Could not sign in");
 });
 
 const THEMES = ["auto", "light", "dark"];
