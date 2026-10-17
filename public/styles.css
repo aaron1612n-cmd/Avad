@@ -296,3 +296,7 @@ body:has(.selbar:not([hidden])) .wall { padding-bottom: 90px; }
   .stage-top #stageNo { flex-basis: 100%; }
   .stage-btn { min-height: 40px; padding: 6px 10px; }
 }
+.stage-body .clock .btns { justify-content: center; }
+.stage-body .clock .btns .outline { border-color: var(--paper); color: var(--paper); }
+.stage-body .clock .btns .outline:hover { background: var(--paper); color: var(--ink); }
+.stage-body .clock { text-align: center; }
