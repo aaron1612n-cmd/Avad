@@ -228,3 +228,8 @@ th { font: 500 0.64rem var(--mono); text-transform: uppercase; letter-spacing: 0
 
 .stage-body .clock { text-align: center; }
 .stage-body .clock .sub { color: color-mix(in srgb, var(--paper) 65%, transparent); font-size: 0.9rem; }
+
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+label.pickbtn { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+.vh:focus-visible + label, .vh:focus-visible ~ label { outline: 2px solid var(--accent); }
+@media (max-width: 860px) { label.pickbtn { flex: 1; } }

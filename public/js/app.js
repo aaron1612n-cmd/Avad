@@ -35,7 +35,7 @@ function dialog(build) {
 }
 
 const field = (label, control) => h("label", { text: label }, control);
-const btn = (text, value, cls = "outline") => h("button", { type: "submit", value, class: cls, text });
+const btn = (text, value, cls = "outline") => h("button", { type: "submit", value, class: cls, text, formnovalidate: value !== "ok" });
 
 async function askText(title, value = "", label = "Name") {
   const input = h("input", { name: "v", value, maxlength: 80, required: true });
@@ -108,7 +108,7 @@ function plateFor(item, idx, { stamp = false } = {}) {
   const ro = readonly();
   const p = h("article", { class: "plate" + (stamp ? " stamp" : ""), "data-id": item.id, "data-type": typeLabel(item.type) });
   const acts = ro ? null : h("div", { class: "acts" },
-    h("button", { type: "button", "aria-label": "Open on stage", text: "view", onclick: () => openStage(item.id) }),
+    h("button", { type: "button", "aria-label": "Open full screen", text: "open", onclick: () => openStage(item.id) }),
     h("button", { type: "button", "aria-label": "Edit", text: "edit", onclick: () => editItem(item.id) }));
   p.append(
     h("header", { class: "plate-head" }, h("span", { text: "No. " + String(idx + 1).padStart(3, "0") }), h("span", { class: "plate-tools" }, h("span", { class: "kind", text: typeLabel(item.type) }), acts)),
@@ -219,19 +219,25 @@ function addText(raw) {
 async function addFiles(files) {
   if (readonly()) return;
   const list = [...files];
+  let added = 0;
   for (const f of list) {
+   try {
     const d = detectFile(f);
     const { asText, ...partial } = d;
     if (asText) {
       partial.text = await f.text();
     } else {
       partial.file = uid();
-      try { await putFile(partial.file, f); } catch { toast("Could not store " + f.name); continue; }
+      await putFile(partial.file, f);
     }
     addItem(partial, { quiet: list.length > 1 });
+    added++;
+   } catch {
+    toast("Could not add " + (f.name || "that file"));
+   }
   }
   if (list.length > 1) renderWall();
-  toast(list.length === 1 ? "Added" : `Added ${list.length}`);
+  if (added) toast(added === 1 ? "Added" : `Added ${added}`);
 }
 
 function updateChip() {
@@ -250,8 +256,13 @@ el.bar.addEventListener("submit", (e) => {
   e.preventDefault();
   if (addText(el.input.value)) { el.input.value = ""; updateChip(); }
 });
-$("pick").addEventListener("click", () => $("file").click());
-$("file").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
+for (const id of ["photos", "file"]) {
+  $(id).addEventListener("change", (e) => {
+    const list = [...e.target.files];
+    e.target.value = "";
+    if (list.length) addFiles(list);
+  });
+}
 
 // paste anywhere
 document.addEventListener("paste", (e) => {
@@ -288,7 +299,7 @@ async function editItem(id) {
   const item = b.items[i];
   const title = h("input", { value: item.title, maxlength: 120 });
   const cap = h("input", { value: item.caption, maxlength: 240 });
-  const src = URL_TYPES.has(item.type) && !item.file ? h("input", { value: item.src, type: "url" }) : null;
+  const src = URL_TYPES.has(item.type) && !item.file ? h("input", { value: item.src, type: "text", inputmode: "url", autocapitalize: "off", autocomplete: "off" }) : null;
   const text = TEXT_TYPES.has(item.type) ? h("textarea", { spellcheck: "false" }) : null;
   if (text) text.value = item.text;
   const when = item.type === "countdown" ? h("input", { type: "datetime-local", value: toLocal(item.meta.date) }) : null;

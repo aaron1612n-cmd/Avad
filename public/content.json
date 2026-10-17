@@ -3,7 +3,7 @@
     {
       "name": "Start here",
       "items": [
-        { "type": "note", "title": "What this is", "text": "A wall for **whatever** you want to look at.\n\n- Paste a link, image, video or file\n- Type a note, `#hex` colour, or `until 2027-01-01`\n- Drag things in from anywhere\n\nEdit `public/content.json` to change what loads first." },
+        { "type": "note", "title": "Welcome", "text": "This is your board. Add anything and it shows up here.\n\n- Tap **Photos** to add pictures or videos\n- Tap **Files** for anything else\n- Paste a link, or type a note, and press **Add**\n- Tap **Slideshow** to see everything full screen" },
         { "type": "image", "src": "/samples/plate-one.svg", "title": "Plate one", "caption": "Local file in the repo, served by Cloudflare." },
         { "type": "color", "text": "#C93A1B", "title": "Vermilion" },
         { "type": "countdown", "meta": { "date": "2027-01-01T00:00:00" }, "title": "New year" },

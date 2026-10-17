@@ -20,6 +20,9 @@ Chat: "new website idea, a website that displays anything I want". Keep <1,500 t
 - Built and tested locally with `npx wrangler dev` + Playwright (desktop 1366, mobile 390, dark). No console errors; upload/reload/share/edit verified.
 - Branch `claude/nice-volta-c6agz9`. No `main` exists on GitHub; PR blocked until user creates it or allows me to.
 
+## Changelog
+- v2: Cancel in dialogs no longer triggers form validation (`formnovalidate`; Address field is plain text, not type=url). Photos/Files are `<label for=input>` buttons with visually-hidden inputs (reliable on iOS). Plainer wording: Slideshow, Photos, Files, Save/Restore backup. User found v1 confusing: keep copy plain, avoid jargon.
+
 ## Open / next
 - DEPLOYED: https://avad.galaxica.workers.dev (Worker `avad`). Redeploy: `npm run deploy` (CLOUDFLARE_API_TOKEN is an env var in the cloud environment; never commit it).
 - Ideas: KV-backed short share links and cross-device sync; drag reorder; more types (map, tweet, 3D).
