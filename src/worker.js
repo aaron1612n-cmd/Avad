@@ -222,7 +222,9 @@ function sseText(body, pick) {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
         if (!data || data === "[DONE]") continue;
-        try { const t = pick(JSON.parse(data)); if (t) ctl.enqueue(enc.encode(t)); } catch {}
+        let t = "";
+        try { t = pick(JSON.parse(data), data); } catch { t = pick(null, data); }
+        if (t) ctl.enqueue(enc.encode(t));
       }
     },
   }));
@@ -235,7 +237,15 @@ async function claudeStream(env, user) {
     body: JSON.stringify({ model: env.ANTHROPIC_MODEL || "claude-sonnet-5-5", max_tokens: 12000, stream: true, system: WIDGET_SYSTEM, messages: [{ role: "user", content: user }] }),
   });
   if (!r.ok) throw new Error(`Claude said ${r.status}: ${(await r.text()).slice(0, 160)}`);
-  return sseText(r.body, (j) => (j.type === "content_block_delta" ? j.delta?.text : ""));
+  return sseText(r.body, (j) => (j?.type === "content_block_delta" ? j.delta?.text || "" : ""));
+}
+
+// Workers AI sometimes sends digits as bare JSON numbers (even invalid ones like 00), so don't trust JSON.parse alone.
+function workersAiPiece(j, raw) {
+  if (j) return j.response == null ? "" : String(j.response);
+  const m = raw.match(/"response"\s*:\s*("(?:[^"\\]|\\.)*"|-?[\d.]+)/);
+  if (!m) return "";
+  try { return m[1].startsWith('"') ? JSON.parse(m[1]) : m[1]; } catch { return ""; }
 }
 
 async function workersAiStream(env, user) {
@@ -244,7 +254,7 @@ async function workersAiStream(env, user) {
   for (const model of models) {
     try {
       const out = await env.AI.run(model, { messages: [{ role: "system", content: WIDGET_SYSTEM }, { role: "user", content: user }], stream: true, max_tokens: 6000 });
-      return sseText(out, (j) => j.response || "");
+      return sseText(out, workersAiPiece);
     } catch (e) {
       last = e;
     }
