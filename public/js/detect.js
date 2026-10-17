@@ -108,3 +108,19 @@ export function detectFile(file) {
   }
   return { ...base, type: "file" };
 }
+
+const BATCHABLE = new Set(["image", "video", "audio", "youtube", "vimeo", "pdf", "link", "color", "countdown"]);
+
+/** Several links/colours pasted together (one per line, or separated by spaces/commas) become one item each. */
+export function detectMany(raw) {
+  const text = (raw || "").trim();
+  if (!text) return [];
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#!"));
+  let parts = lines.length > 1 ? lines : text.split(/[\s,]+/).filter(Boolean);
+  if (parts.length > 1) {
+    const found = parts.map(detect);
+    if (found.every((d) => d && BATCHABLE.has(d.type))) return found;
+  }
+  const one = detect(raw);
+  return one ? [one] : [];
+}

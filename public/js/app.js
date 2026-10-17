@@ -1,5 +1,5 @@
 import { state, mode, hooks, load, loadServer, save, board, normalize, normalizeItem, saveBlob, dropBlob, exportAll, importBoards, encodeBoard, decodeBoard } from "./store.js";
-import { detect, detectFile } from "./detect.js";
+import { detectMany, detectFile } from "./detect.js";
 import { h, renderBody, typeLabel, timers } from "./render.js";
 
 const $ = (id) => document.getElementById(id);
@@ -224,9 +224,14 @@ function addItem(partial, { quiet = false } = {}) {
 }
 
 function addText(raw) {
-  const d = detect(raw);
-  if (!d) return false;
-  addItem(d);
+  const found = detectMany(raw);
+  if (!found.length) return false;
+  if (found.length === 1) addItem(found[0]);
+  else {
+    found.forEach((d) => addItem(d, { quiet: true }));
+    renderWall();
+    toast(`Added ${found.length}`);
+  }
   return true;
 }
 
@@ -234,7 +239,8 @@ async function addFiles(files) {
   if (readonly()) return;
   const list = [...files];
   let added = 0;
-  for (const f of list) {
+  for (const [n, f] of list.entries()) {
+   if (list.length > 1) toast(`Adding ${n + 1} of ${list.length}…`);
    try {
     const d = detectFile(f);
     const { asText, ...partial } = d;
@@ -254,9 +260,9 @@ async function addFiles(files) {
 }
 
 function updateChip() {
-  const d = detect(el.input.value);
-  el.chip.textContent = d ? typeLabel(d.type) : "add";
-  el.chip.dataset.on = String(!!d);
+  const found = detectMany(el.input.value);
+  el.chip.textContent = !found.length ? "add" : found.length > 1 ? `${found.length} items` : typeLabel(found[0].type);
+  el.chip.dataset.on = String(found.length > 0);
   el.input.style.height = "auto";
   el.input.style.height = Math.min(el.input.scrollHeight, innerHeight * 0.4) + "px";
 }
@@ -298,8 +304,9 @@ document.addEventListener("drop", (e) => {
   if (readonly()) return;
   const dt = e.dataTransfer;
   if (dt.files.length) return addFiles(dt.files);
-  const t = dt.getData("text/uri-list") || dt.getData("text/plain");
-  if (t) addText(t.split(/\r?\n/).find((l) => l && !l.startsWith("#")) || t);
+  const uris = dt.getData("text/uri-list");
+  const t = uris ? uris.split(/\r?\n/).filter((l) => l && !l.startsWith("#")).join("\n") : dt.getData("text/plain");
+  if (t) addText(t);
 });
 
 // ---------- editing ----------
