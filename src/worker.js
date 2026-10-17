@@ -242,18 +242,23 @@ async function claudeStream(env, user) {
 
 // Workers AI sometimes sends digits as bare JSON numbers (even invalid ones like 00), so don't trust JSON.parse alone.
 function workersAiPiece(j, raw) {
-  if (j) return j.response == null ? "" : String(j.response);
+  if (j) {
+    if (j.response != null) return String(j.response);
+    const c = j.choices?.[0];
+    return c?.delta?.content ?? c?.text ?? "";
+  }
   const m = raw.match(/"response"\s*:\s*("(?:[^"\\]|\\.)*"|-?[\d.]+)/);
   if (!m) return "";
   try { return m[1].startsWith('"') ? JSON.parse(m[1]) : m[1]; } catch { return ""; }
 }
 
 async function workersAiStream(env, user) {
-  const models = [env.WORKERS_AI_MODEL, "@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"].filter(Boolean);
+  // Chosen by rendering the same brief on every free model: Gemma 4 designed best, gpt-oss is fast, Qwen is the safe fallback.
+  const models = [env.WORKERS_AI_MODEL, "@cf/google/gemma-4-26b-a4b-it", "@cf/openai/gpt-oss-120b", "@cf/qwen/qwen2.5-coder-32b-instruct"].filter(Boolean);
   let last;
   for (const model of models) {
     try {
-      const out = await env.AI.run(model, { messages: [{ role: "system", content: WIDGET_SYSTEM }, { role: "user", content: user }], stream: true, max_tokens: 6000 });
+      const out = await env.AI.run(model, { messages: [{ role: "system", content: WIDGET_SYSTEM }, { role: "user", content: user }], stream: true, max_tokens: 8000 });
       return sseText(out, workersAiPiece);
     } catch (e) {
       last = e;
