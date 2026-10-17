@@ -21,6 +21,7 @@ Chat: "new website idea, a website that displays anything I want". Keep <1,500 t
 - Branch `claude/nice-volta-c6agz9`. No `main` exists on GitHub; PR blocked until user creates it or allows me to.
 
 ## Changelog
+- v4: security pass. Edits are per-browser only (no server write path, so visitors cannot change the live site or each other). Added `_headers` (nosniff, frame-ancestors none, referrer policy) and same-origin-only `/api/unfurl`. Open question: does user want a private/read-only public site (needs KV + password)?
 - v3: visible Rename/Delete buttons for boards, delete button on each plate.
 - v2: Cancel in dialogs no longer triggers form validation (`formnovalidate`; Address field is plain text, not type=url). Photos/Files are `<label for=input>` buttons with visually-hidden inputs (reliable on iOS). Plainer wording: Slideshow, Photos, Files, Save/Restore backup. User found v1 confusing: keep copy plain, avoid jargon.
 

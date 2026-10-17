@@ -17,7 +17,14 @@ const json = (data, status = 200, extra = {}) =>
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/unfurl") return unfurl(url);
+    if (url.pathname === "/api/unfurl") {
+      // Only this site's own pages may use the preview endpoint, so it can't be used as a free proxy.
+      const site = request.headers.get("sec-fetch-site");
+      const origin = request.headers.get("origin");
+      const ok = site ? site === "same-origin" : !origin || origin === url.origin;
+      if (request.method !== "GET" || !ok) return json({ error: "forbidden" }, 403, { "cache-control": "no-store" });
+      return unfurl(url);
+    }
     if (url.pathname.startsWith("/api/")) return json({ error: "not found" }, 404);
     return env.ASSETS.fetch(request);
   },
