@@ -91,6 +91,7 @@ function renderTop() {
   el.title.replaceChildren(readonly() ? b.name : h("button", { type: "button", title: "Rename", text: b.name, onclick: renameBoard }));
   el.count.textContent = `${b.items.length} ${b.items.length === 1 ? "plate" : "plates"}`;
   $("present").disabled = !b.items.length;
+  $("renameBoard").hidden = $("deleteBoard").hidden = readonly();
   el.shared.hidden = !readonly();
   el.bar.hidden = readonly();
   document.title = `${b.name} · Avad`;
@@ -109,7 +110,8 @@ function plateFor(item, idx, { stamp = false } = {}) {
   const p = h("article", { class: "plate" + (stamp ? " stamp" : ""), "data-id": item.id, "data-type": typeLabel(item.type) });
   const acts = ro ? null : h("div", { class: "acts" },
     h("button", { type: "button", "aria-label": "Open full screen", text: "open", onclick: () => openStage(item.id) }),
-    h("button", { type: "button", "aria-label": "Edit", text: "edit", onclick: () => editItem(item.id) }));
+    h("button", { type: "button", "aria-label": "Edit", text: "edit", onclick: () => editItem(item.id) }),
+    h("button", { type: "button", "aria-label": "Delete", text: "delete", onclick: () => removeItem(item.id) }));
   p.append(
     h("header", { class: "plate-head" }, h("span", { text: "No. " + String(idx + 1).padStart(3, "0") }), h("span", { class: "plate-tools" }, h("span", { class: "kind", text: typeLabel(item.type) }), acts)),
     renderBody(item, { toast }),
@@ -185,7 +187,7 @@ async function newBoard() {
 
 async function removeBoard(id) {
   const b = state.boards.find((x) => x.id === id);
-  if (state.boards.length === 1) return toast("Keep at least one board");
+  if (state.boards.length === 1) return toast("Make a second board first (+ New board)");
   if (!(await confirm(`Delete “${b.name}” and its ${b.items.length} plates?`))) return;
   b.items.forEach((i) => i.file && delFile(i.file));
   state.boards = state.boards.filter((x) => x.id !== id);
@@ -340,6 +342,16 @@ const toLocal = (iso) => {
   return d.toISOString().slice(0, 16);
 };
 
+async function removeItem(id) {
+  const b = board();
+  const i = b.items.findIndex((x) => x.id === id);
+  if (i < 0 || !(await confirm("Delete this plate?"))) return;
+  if (b.items[i].file) delFile(b.items[i].file);
+  b.items.splice(i, 1);
+  save();
+  renderAll();
+}
+
 // ---------- stage ----------
 let stageList = [], stageIdx = 0, stageTimer = null, lastFocus = null;
 
@@ -412,6 +424,8 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- rail tools ----------
 $("newBoard").addEventListener("click", newBoard);
+$("renameBoard").addEventListener("click", renameBoard);
+$("deleteBoard").addEventListener("click", () => removeBoard(board().id));
 $("keep").addEventListener("click", () => {
   const b = sharedBoard;
   state.boards.push(b);
