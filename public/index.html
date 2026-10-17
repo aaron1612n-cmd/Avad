@@ -49,6 +49,7 @@
       <h1 id="boardTitle">Board</h1>
       <div class="top-meta">
         <span id="count" class="mono"></span>
+        <button class="outline" id="selectMode" type="button" aria-pressed="false">Select</button>
         <button class="outline" id="renameBoard" type="button">Rename</button>
         <button class="outline" id="deleteBoard" type="button">Delete</button>
         <button class="outline" id="present" type="button">Slideshow</button>
@@ -61,10 +62,14 @@
         placeholder="Paste a link or type a note"></textarea>
       <label class="outline pickbtn" for="photos">Photos</label>
       <label class="outline pickbtn" for="file">Files</label>
+      <button type="button" class="outline" id="widgets">Widgets</button>
       <button type="submit" class="solid">Add</button>
     </form>
 
-    <div id="filters" class="filters" role="group" aria-label="Filter by type"></div>
+    <div class="finder">
+      <input id="q" type="search" placeholder="Search this board" aria-label="Search this board" autocomplete="off" enterkeyhint="search">
+    </div>
+    <div id="filters" class="filters" role="group" aria-label="Filter by type or tag"></div>
     <div id="wall" class="wall"></div>
     <p id="empty" class="empty" hidden>Nothing here yet. Tap <b>Photos</b> to add pictures, <b>Files</b> for anything else, or paste a link above.</p>
   </main>
@@ -75,6 +80,10 @@
     <span id="stageNo" class="mono"></span>
     <span id="stageTitle" class="stage-title"></span>
     <button class="stage-btn" id="stagePlay" type="button" aria-pressed="false">Auto-play</button>
+    <button class="stage-btn" id="stageShuffle" type="button" aria-pressed="false">Shuffle</button>
+    <button class="stage-btn" id="stageSpeed" type="button" aria-label="Seconds per slide">6s</button>
+    <button class="stage-btn" id="stageMusic" type="button" aria-pressed="false" hidden>Music</button>
+    <button class="stage-btn" id="stageFull" type="button" hidden>Full</button>
     <button class="stage-btn" id="stageClose" type="button" aria-label="Close stage">Close</button>
   </div>
   <div id="stageBody" class="stage-body"></div>
@@ -92,6 +101,14 @@
 <input id="photos" class="vh" type="file" accept="image/*,video/*" multiple>
 <input id="file" class="vh" type="file" multiple>
 <input id="importFile" class="vh" type="file" accept="application/json,.json">
+<div id="selbar" class="selbar" hidden role="toolbar" aria-label="Selected plates">
+  <span id="selCount" class="mono"></span>
+  <button class="outline" id="selAll" type="button">All</button>
+  <button class="outline" id="selUp" type="button" aria-label="Move earlier">Earlier</button>
+  <button class="outline" id="selDown" type="button" aria-label="Move later">Later</button>
+  <button class="outline" id="selMove" type="button">Move to…</button>
+  <button class="solid" id="selDelete" type="button">Delete</button>
+</div>
 <div id="drop" class="drop" hidden aria-hidden="true"><span>Drop</span></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>

@@ -91,6 +91,7 @@ export function normalizeItem(i) {
     title: i.title || "",
     caption: i.caption || "",
     meta: i.meta || {},
+    tags: Array.isArray(i.tags) ? i.tags : [],
     file: i.file || "",
   };
 }

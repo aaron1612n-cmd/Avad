@@ -72,11 +72,45 @@ const safe = (u) => {
   return p ? p.href : "";
 };
 
-async function resolveSrc(item) {
+export async function resolveSrc(item) {
   return item.file ? fileUrl(item.file) : safe(item.src);
 }
 
 export const timers = new Set();
+
+/** Run fn on an interval for as long as the plate stays in the page. */
+function every(box, ms, fn) {
+  const id = setInterval(() => {
+    if (box.dataset.mounted && !box.isConnected) return clearInterval(id);
+    fn();
+  }, ms);
+  queueMicrotask(() => (box.dataset.mounted = "1"));
+  return id;
+}
+
+const WX = { 0: "Clear", 1: "Mostly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Freezing rain", 67: "Freezing rain", 71: "Light snow", 73: "Snow", 75: "Heavy snow", 77: "Snow grains", 80: "Showers", 81: "Showers", 82: "Heavy showers", 85: "Snow showers", 86: "Snow showers", 95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm" };
+const wxCache = new Map();
+
+async function weather(city) {
+  const hit = wxCache.get(city);
+  if (hit && Date.now() - hit.at < 600000) return hit.data;
+  const f = /^en-US/i.test(navigator.language || "");
+  const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(city)}`)).json();
+  const g = geo.results?.[0];
+  if (!g) throw new Error("no city");
+  const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1${f ? "&temperature_unit=fahrenheit&wind_speed_unit=mph" : ""}`)).json();
+  const data = {
+    name: [g.name, g.country_code].filter(Boolean).join(", "),
+    temp: Math.round(w.current.temperature_2m),
+    label: WX[w.current.weather_code] || "—",
+    hi: Math.round(w.daily.temperature_2m_max[0]),
+    lo: Math.round(w.daily.temperature_2m_min[0]),
+    wind: `${Math.round(w.current.wind_speed_10m)} ${f ? "mph" : "km/h"}`,
+  };
+  wxCache.set(city, { at: Date.now(), data });
+  return data;
+}
+
 
 function contrast(hex) {
   let c = hex.replace("#", "");
@@ -86,7 +120,7 @@ function contrast(hex) {
 }
 
 /** Build the body of a plate. `big` is the full-screen stage version. */
-export function renderBody(item, { big = false, toast = () => {} } = {}) {
+export function renderBody(item, { big = false, toast = () => {}, editable = false, onChange = () => {} } = {}) {
   const box = h("div", { class: "plate-body" });
   const set = (...n) => box.replaceChildren(...n.filter(Boolean));
 
@@ -196,6 +230,118 @@ export function renderBody(item, { big = false, toast = () => {} } = {}) {
       set(h("div", { class: "clock" }, big$, sub));
       break;
     }
+    case "weather": {
+      const out = h("div", { class: "wx" }, h("div", { class: "sub mono", text: "loading…" }));
+      const load = async () => {
+        try {
+          const d = await weather(item.meta.city);
+          out.replaceChildren(
+            h("div", { class: "big", text: `${d.temp}°` }),
+            h("div", { class: "wx-line", text: d.label }),
+            h("div", { class: "sub mono", text: `${d.name} · high ${d.hi}° low ${d.lo}° · wind ${d.wind}` }));
+        } catch {
+          out.replaceChildren(h("div", { class: "sub mono", text: "weather unavailable" }));
+        }
+      };
+      load();
+      every(box, 600000, load);
+      set(h("div", { class: "clock" }, out));
+      break;
+    }
+    case "clock": {
+      const zone = item.meta.zone || "UTC";
+      const time = h("div", { class: "big" });
+      const date = h("div", { class: "sub mono" });
+      const tick = () => {
+        const now = new Date();
+        try {
+          time.textContent = now.toLocaleTimeString([], { timeZone: zone, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          date.textContent = `${now.toLocaleDateString([], { timeZone: zone, weekday: "short", day: "numeric", month: "short" })} · ${zone.replace(/_/g, " ")}`;
+        } catch { time.textContent = "bad zone"; }
+      };
+      tick();
+      every(box, 1000, tick);
+      set(h("div", { class: "clock" }, time, date));
+      break;
+    }
+    case "timer": {
+      const total = Number(item.meta.seconds) || 0; // 0 = stopwatch
+      let base = 0, startedAt = 0, running = false, done = false;
+      const out = h("div", { class: "big" });
+      const startBtn = h("button", { type: "button", class: "outline", text: "Start" });
+      const ms = () => base + (running ? Date.now() - startedAt : 0);
+      const fmt = (t) => {
+        t = Math.max(0, t);
+        const m = Math.floor(t / 60000), sec = Math.floor((t % 60000) / 1000);
+        return total ? `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.${Math.floor((t % 1000) / 100)}`;
+      };
+      const draw = () => {
+        const shown = total ? Math.ceil((total * 1000 - ms()) / 1000) * 1000 : ms();
+        out.textContent = fmt(shown);
+        if (total && running && total * 1000 - ms() <= 0) {
+          running = false; base = total * 1000; done = true;
+          startBtn.textContent = "Start";
+          out.textContent = "00:00 done";
+          navigator.vibrate?.([200, 100, 200]);
+        }
+      };
+      startBtn.addEventListener("click", () => {
+        if (done) { base = 0; done = false; }
+        if (running) { base = ms(); running = false; startBtn.textContent = "Resume"; }
+        else { startedAt = Date.now(); running = true; startBtn.textContent = "Pause"; }
+        draw();
+      });
+      const reset = h("button", { type: "button", class: "outline", text: "Reset", onclick: () => { running = false; done = false; base = 0; startBtn.textContent = "Start"; draw(); } });
+      draw();
+      every(box, 100, draw);
+      set(h("div", { class: "clock" }, out, h("div", { class: "btns" }, startBtn, reset)));
+      break;
+    }
+    case "todo": {
+      const tasks = (item.meta.tasks ||= []);
+      const list = h("ul", { class: "todo" });
+      const left = h("div", { class: "sub mono" });
+      const draw = () => {
+        list.replaceChildren(...tasks.map((t, i) => h("li", { class: t.done ? "done" : "" },
+          h("button", { type: "button", class: "tick", "aria-pressed": String(!!t.done), "aria-label": "Done", disabled: !editable, onclick: () => { t.done = !t.done; onChange(); draw(); } }),
+          h("span", { text: t.t }),
+          editable ? h("button", { type: "button", class: "rm", "aria-label": "Remove", text: "remove", onclick: () => { tasks.splice(i, 1); onChange(); draw(); } }) : null)));
+        left.textContent = tasks.length ? `${tasks.filter((t) => !t.done).length} of ${tasks.length} left` : "empty";
+      };
+      draw();
+      const form = editable ? h("form", { class: "todo-add", onsubmit: (e) => {
+        e.preventDefault();
+        const input = e.currentTarget.elements.t;
+        const v = input.value.trim();
+        if (!v) return;
+        tasks.push({ t: v.slice(0, 200), done: false });
+        input.value = "";
+        onChange(); draw();
+      } }, h("input", { name: "t", placeholder: "Add a task", maxlength: 200, "aria-label": "Add a task", autocomplete: "off" }), h("button", { class: "outline", type: "submit", text: "Add" })) : null;
+      set(h("div", { class: "text" }, list, left), form);
+      break;
+    }
+    case "price": {
+      const base = String(item.meta.base || "BTC").toUpperCase(), quote = String(item.meta.quote || "USD").toUpperCase();
+      const out = h("div", { class: "big", text: "…" });
+      const sub = h("div", { class: "sub mono", text: `${base} / ${quote}` });
+      const load = async () => {
+        try {
+          const r = await fetch(`https://api.coinbase.com/v2/prices/${encodeURIComponent(base)}-${encodeURIComponent(quote)}/spot`);
+          const d = await r.json();
+          const n = Number(d.data.amount);
+          out.textContent = new Intl.NumberFormat([], { style: "currency", currency: quote, maximumFractionDigits: n < 10 ? 4 : 2 }).format(n);
+          sub.textContent = `${base} / ${quote} · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+        } catch {
+          out.textContent = "n/a";
+          sub.textContent = `${base} / ${quote} · price unavailable`;
+        }
+      };
+      load();
+      every(box, 60000, load);
+      set(h("div", { class: "clock" }, out, sub));
+      break;
+    }
     case "link": {
       const u = safe(item.src);
       const m = item.meta || {};
@@ -221,5 +367,5 @@ export function renderBody(item, { big = false, toast = () => {} } = {}) {
   return box;
 }
 
-export const TYPE_LABEL = { youtube: "video", vimeo: "video", pdf: "pdf", countdown: "clock", color: "colour", html: "html", csv: "table", json: "json" };
+export const TYPE_LABEL = { youtube: "video", vimeo: "video", pdf: "pdf", countdown: "countdown", clock: "time", color: "colour", html: "html", csv: "table", json: "json", todo: "list" };
 export const typeLabel = (t) => TYPE_LABEL[t] || t;

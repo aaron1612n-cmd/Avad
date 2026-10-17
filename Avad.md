@@ -27,6 +27,7 @@ Chat: "new website idea, a website that displays anything I want". Keep <1,500 t
 - Local dev: `.dev.vars` (gitignored) holds a test ADMIN_PASSWORD.
 
 ## Changelog
+- v7 (WIP, committed untested, NOT deployed): live widgets (weather, world clock, timer/stopwatch, to-do, crypto price via Widgets button or typed commands), search + tags, select-many (move/delete/reorder), drag-to-reorder grip, slideshow shuffle/speed/music/fullscreen/idle-hide. Next: test, deploy; then AI widget maker (Worker -> LLM -> sandboxed html plate; owner-only; user to choose Claude API key vs Workers AI).
 - v6: add several at once: pasted/dropped lists of links or colours (one per line, or space/comma separated) become one plate each; multi-file picks show progress. Mixed text stays one note.
 - v5: KV storage + owner password + read-only public view.
 - v4: security pass. Edits are per-browser only (no server write path, so visitors cannot change the live site or each other). Added `_headers` (nosniff, frame-ancestors none, referrer policy) and same-origin-only `/api/unfurl`. User chose option 2 (public read-only, owner edits) -> built in v5.
