@@ -101,6 +101,36 @@
 <input id="photos" class="vh" type="file" accept="image/*,video/*" multiple>
 <input id="file" class="vh" type="file" multiple>
 <input id="importFile" class="vh" type="file" accept="application/json,.json">
+<section id="studio" class="studio" hidden aria-label="AI widget studio">
+  <div class="studio-top">
+    <strong class="studio-title">Make a widget</strong>
+    <span id="studioProv" class="mono"></span>
+    <button class="outline" id="studioClose" type="button">Close</button>
+  </div>
+  <div class="studio-main">
+    <div class="studio-side">
+      <label class="lbl">Describe it
+        <textarea id="studioPrompt" rows="5" maxlength="2000" placeholder="A neon synthwave clock floating over my beach video"></textarea>
+      </label>
+      <div id="studioMedia" class="media-pick" hidden>
+        <span class="lbl">Use these from this board</span>
+        <div id="mediaList"></div>
+      </div>
+      <label class="lbl">More image or video links (one per line)
+        <textarea id="studioLinks" rows="2" placeholder="https://…"></textarea>
+      </label>
+      <div class="studio-actions">
+        <button class="solid" id="studioGo" type="button">Make it</button>
+        <button class="outline" id="studioUndo" type="button" disabled>Undo</button>
+        <button class="solid" id="studioSave" type="button" disabled>Save to board</button>
+      </div>
+      <p id="studioStatus" class="mono" role="status" aria-live="polite"></p>
+    </div>
+    <div class="studio-preview">
+      <iframe id="studioFrame" sandbox="allow-scripts" allow="autoplay; fullscreen" title="Widget preview"></iframe>
+    </div>
+  </div>
+</section>
 <div id="selbar" class="selbar" hidden role="toolbar" aria-label="Selected plates">
   <span id="selCount" class="mono"></span>
   <button class="outline" id="selAll" type="button">All</button>

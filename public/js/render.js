@@ -76,6 +76,16 @@ export async function resolveSrc(item) {
   return item.file ? fileUrl(item.file) : safe(item.src);
 }
 
+/** Wrap user or AI HTML with a content-security policy so a widget can show media and call public APIs but nothing else. */
+export function htmlDoc(text) {
+  const csp = `default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https:; img-src https: data: blob: ${location.origin}; media-src https: data: blob: ${location.origin}; font-src https: data:; connect-src https:; frame-src https://www.youtube-nocookie.com https://player.vimeo.com; form-action 'none'; base-uri 'none'`;
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`;
+  const src = String(text || "");
+  if (/<head[^>]*>/i.test(src)) return src.replace(/<head[^>]*>/i, (m) => m + meta);
+  if (/<html[^>]*>/i.test(src)) return src.replace(/<html[^>]*>/i, (m) => m + "<head>" + meta + "</head>");
+  return "<!doctype html><html><head>" + meta + '<meta name="viewport" content="width=device-width,initial-scale=1"></head><body>' + src + "</body></html>";
+}
+
 export const timers = new Set();
 
 /** Run fn on an interval for as long as the plate stays in the page. */
@@ -176,7 +186,7 @@ export function renderBody(item, { big = false, toast = () => {}, editable = fal
       break;
     }
     case "html":
-      set(h("iframe", { class: "frame", sandbox: "allow-scripts", srcdoc: item.text, title: item.title || "HTML" }));
+      set(h("iframe", { class: "frame", sandbox: "allow-scripts", allow: "autoplay; fullscreen", srcdoc: htmlDoc(item.text), title: item.title || "HTML", loading: big ? null : "lazy" }));
       break;
     case "note":
       set(h("div", { class: "text" }));

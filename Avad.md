@@ -27,6 +27,7 @@ Chat: "new website idea, a website that displays anything I want". Keep <1,500 t
 - Local dev: `.dev.vars` (gitignored) holds a test ADMIN_PASSWORD.
 
 ## Changelog
+- v8: AI widget maker. Widgets > "Custom, made by AI" opens a studio (prompt + pick board media + links -> streamed single-file HTML -> sandboxed preview -> Save as html plate with meta.ai; "Tweak with AI" in edit dialog). Worker `/api/widget` (owner-only, 60/day cap via AI_DAILY_LIMIT): Claude if ANTHROPIC_API_KEY secret set (model env ANTHROPIC_MODEL, default claude-sonnet-5-5), else Cloudflare Workers AI binding `AI`. html plates now get a CSP via htmlDoc().
 - v7 (tested locally with Playwright, deployed): live widgets (weather, world clock, timer/stopwatch, to-do, crypto price via Widgets button or typed commands), search + tags, select-many (move/delete/reorder), drag-to-reorder grip, slideshow shuffle/speed/music/fullscreen/idle-hide. Next: test, deploy; then AI widget maker (Worker -> LLM -> sandboxed html plate; owner-only; user to choose Claude API key vs Workers AI).
 - v6: add several at once: pasted/dropped lists of links or colours (one per line, or space/comma separated) become one plate each; multi-file picks show progress. Mixed text stays one note.
 - v5: KV storage + owner password + read-only public view.

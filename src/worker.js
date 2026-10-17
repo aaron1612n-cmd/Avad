@@ -51,6 +51,12 @@ export default {
     const f = path.match(/^\/api\/file\/([a-z0-9]{6,32})$/);
     if (f && configured) return file(request, env, f[1], admin);
 
+    if (path === "/api/widget") {
+      if (!configured || !admin) return json({ error: "sign in" }, 401);
+      if (request.method === "GET") return json({ provider: provider(env) });
+      if (request.method === "POST") return widget(request, env);
+    }
+
     if (path === "/api/unfurl") {
       if (configured && !admin) return json({ error: "sign in" }, 401);
       return unfurl(url);
@@ -152,6 +158,98 @@ async function file(request, env, id, admin) {
     return json({ ok: true, src: `/api/file/${id}` });
   }
   return json({ error: "not allowed" }, 405);
+}
+
+
+// ---------- AI widget maker (owner only) ----------
+const WIDGET_SYSTEM = `You build single-file interactive web widgets that are shown in a sandboxed iframe on a personal dashboard.
+Output ONLY the complete HTML document, starting with <!doctype html>. No markdown fences, no commentary before or after.
+Rules:
+- One file: inline <style> and <script>. Fill the whole viewport (html, body: margin 0, width and height 100%, overflow hidden) and adapt to any size from 280x200 phone cards to fullscreen using relative units and a resize handler.
+- Make the design striking and original, never generic: a deliberate small palette, expressive typography, real layout decisions, and motion that has a purpose. Avoid purple or blue gradients, glassmorphism, glow shadows, and emoji used as icons.
+- You may use canvas, SVG, CSS animation or WebGL. External libraries only from https://cdnjs.cloudflare.com or https://cdn.jsdelivr.net, with a pinned version.
+- For images, video or audio use ONLY the media URLs the user lists. Videos: autoplay muted loop playsinline, object-fit cover. Never invent media URLs.
+- No forms, no navigation or links that leave the widget, no alert/confirm/prompt, no cookies or localStorage. Network calls only to public CORS-enabled GET APIs, and only if the user asked for live data.
+- Honour prefers-reduced-motion. Keep it under about 500 lines.`;
+
+const provider = (env) => (env.ANTHROPIC_API_KEY ? "claude" : env.AI ? "workers-ai" : null);
+
+async function widget(request, env) {
+  const which = provider(env);
+  if (!which) return json({ error: "AI is not set up" }, 501);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+  const prompt = String(body.prompt || "").trim().slice(0, 2000);
+  const current = String(body.current || "").slice(0, 80000);
+  if (!prompt) return json({ error: "describe the widget first" }, 400);
+
+  // Owner-only already, but cap daily use anyway so a stolen session can't run up a bill.
+  const day = `ai:${new Date().toISOString().slice(0, 10)}`;
+  const used = Number(await env.BOARDS.get(day)) || 0;
+  if (used >= (Number(env.AI_DAILY_LIMIT) || 60)) return json({ error: "daily AI limit reached" }, 429);
+  await env.BOARDS.put(day, String(used + 1), { expirationTtl: 172800 });
+
+  const origin = new URL(request.url).origin;
+  const media = (Array.isArray(body.media) ? body.media : []).slice(0, 12).flatMap((m) => {
+    const u = String(m?.url || "");
+    const abs = u.startsWith("/api/file/") ? origin + u : /^https?:\/\//i.test(u) ? u : "";
+    return abs ? [`- ${String(m.kind || "media").slice(0, 10)}: ${abs}${m.name ? ` (${String(m.name).slice(0, 60)})` : ""}`] : [];
+  });
+  const user = [
+    current ? `Here is the current widget:\n\n${current}\n\nChange it as follows and return the COMPLETE updated HTML:` : "Build this widget:",
+    prompt,
+    media.length ? `\nMedia you may use:\n${media.join("\n")}` : "\nNo media was provided.",
+  ].join("\n");
+
+  try {
+    const stream = which === "claude" ? await claudeStream(env, user) : await workersAiStream(env, user);
+    return new Response(stream, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-provider": which } });
+  } catch (e) {
+    return json({ error: String(e?.message || "the AI call failed").slice(0, 300) }, 502);
+  }
+}
+
+// Turn a server-sent-event body into a stream of plain text pieces.
+function sseText(body, pick) {
+  const dec = new TextDecoder(), enc = new TextEncoder();
+  let buf = "";
+  return body.pipeThrough(new TransformStream({
+    transform(chunk, ctl) {
+      buf += typeof chunk === "string" ? chunk : dec.decode(chunk, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try { const t = pick(JSON.parse(data)); if (t) ctl.enqueue(enc.encode(t)); } catch {}
+      }
+    },
+  }));
+}
+
+async function claudeStream(env, user) {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: env.ANTHROPIC_MODEL || "claude-sonnet-5-5", max_tokens: 12000, stream: true, system: WIDGET_SYSTEM, messages: [{ role: "user", content: user }] }),
+  });
+  if (!r.ok) throw new Error(`Claude said ${r.status}: ${(await r.text()).slice(0, 160)}`);
+  return sseText(r.body, (j) => (j.type === "content_block_delta" ? j.delta?.text : ""));
+}
+
+async function workersAiStream(env, user) {
+  const models = [env.WORKERS_AI_MODEL, "@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"].filter(Boolean);
+  let last;
+  for (const model of models) {
+    try {
+      const out = await env.AI.run(model, { messages: [{ role: "system", content: WIDGET_SYSTEM }, { role: "user", content: user }], stream: true, max_tokens: 6000 });
+      return sseText(out, (j) => j.response || "");
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw new Error("Workers AI failed: " + (last?.message || "no model available"));
 }
 
 // ---------- link previews ----------

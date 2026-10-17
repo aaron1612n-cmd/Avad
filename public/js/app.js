@@ -1,6 +1,6 @@
 import { state, mode, hooks, load, loadServer, save, board, normalize, normalizeItem, saveBlob, dropBlob, exportAll, importBoards, encodeBoard, decodeBoard } from "./store.js";
 import { detect, detectMany, detectFile, resolveZone } from "./detect.js";
-import { h, renderBody, typeLabel, timers, resolveSrc } from "./render.js";
+import { h, renderBody, typeLabel, timers, resolveSrc, htmlDoc } from "./render.js";
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -384,7 +384,7 @@ async function editItem(id) {
     src && field("Address", src), text && field(item.type === "color" ? "Hex" : "Content", text),
     when && field("Date", when), asEmbed && field("Show as", asEmbed), field("Tags (space between)", tagsIn),
     h("div", { class: "row" },
-      h("span", { class: "sp" }, btn("← Earlier", "up"), btn("Later →", "down"), btn("Delete", "del")),
+      h("span", { class: "sp" }, btn("← Earlier", "up"), btn("Later →", "down"), btn("Delete", "del"), item.type === "html" ? btn("Tweak with AI", "ai") : null),
       btn("Cancel", "no"), btn("Save", "ok", "solid"))));
 
   if (r === "ok") {
@@ -401,6 +401,8 @@ async function editItem(id) {
       else if (item.type === "price") item.meta[key] = v.toUpperCase() || item.meta[key];
       else if (v) item.meta[key] = v;
     }
+  } else if (r === "ai") {
+    return openStudio(item);
   } else if (r === "up" && i > 0) [b.items[i - 1], b.items[i]] = [b.items[i], b.items[i - 1]];
   else if (r === "down" && i < b.items.length - 1) [b.items[i + 1], b.items[i]] = [b.items[i], b.items[i + 1]];
   else if (r === "del") {
@@ -722,8 +724,132 @@ function endDrag() {
   renderWall();
 }
 
+
+// ---------- AI studio ----------
+let studioItem = null, studioHtml = "", studioHist = [], studioBusy = false;
+const studio = $("studio");
+
+const cleanHtml = (t) => {
+  let out = t.replace(/^\s*```(?:html)?\s*/i, "").replace(/```\s*$/, "");
+  const i = out.search(/<!doctype|<html/i);
+  if (i > 0) out = out.slice(i);
+  return out.trim();
+};
+
+function studioMedia() {
+  return view().items.filter((i) => ["image", "video", "audio"].includes(i.type) && i.src && !i.file);
+}
+
+function studioShow(html) {
+  studioHtml = html;
+  $("studioFrame").srcdoc = html ? htmlDoc(html) : "";
+  $("studioSave").disabled = !html;
+  $("studioUndo").disabled = !studioHist.length;
+}
+
+async function openStudio(item = null) {
+  studioItem = item;
+  studioHist = [];
+  $("studioPrompt").value = item?.meta?.prompt || "";
+  $("studioLinks").value = "";
+  $("studioStatus").textContent = "";
+  $("studioGo").textContent = item ? "Change it" : "Make it";
+  const list = studioMedia();
+  $("studioMedia").hidden = !list.length;
+  $("mediaList").replaceChildren(...list.map((i) => h("label", { class: "chk" },
+    h("input", { type: "checkbox", value: i.id }), h("span", { text: `${typeLabel(i.type)}: ${i.title || i.meta?.name || i.src.split("/").pop()}` }))));
+  studioShow(item ? item.text : "");
+  studio.hidden = false;
+  document.body.style.overflow = "hidden";
+  $("studioProv").textContent = "checking AI…";
+  try {
+    const r = await fetch("/api/widget");
+    const d = await r.json();
+    $("studioProv").textContent = d.provider === "claude" ? "Claude" : d.provider === "workers-ai" ? "Cloudflare Workers AI (free)" : "";
+    if (!d.provider) $("studioStatus").textContent = "AI is not set up yet.";
+    $("studioGo").disabled = !d.provider;
+  } catch {
+    $("studioProv").textContent = "";
+    $("studioStatus").textContent = "Sign in as owner to use AI.";
+    $("studioGo").disabled = true;
+  }
+  $("studioPrompt").focus();
+}
+
+function closeStudio() {
+  studio.hidden = true;
+  document.body.style.overflow = "";
+  $("studioFrame").srcdoc = "";
+}
+
+$("studioClose").addEventListener("click", closeStudio);
+
+$("studioGo").addEventListener("click", async () => {
+  if (studioBusy) return;
+  const prompt = $("studioPrompt").value.trim();
+  if (!prompt) return $("studioPrompt").focus();
+  const picked = [...$("mediaList").querySelectorAll("input:checked")].map((c) => view().items.find((i) => i.id === c.value)).filter(Boolean);
+  const media = picked.map((i) => ({ kind: i.type, url: i.src, name: i.title || i.meta?.name }));
+  for (const line of $("studioLinks").value.split(/\r?\n/)) {
+    const u = line.trim();
+    if (/^https?:\/\//i.test(u)) media.push({ kind: /\.(mp4|webm|mov|m4v)$/i.test(u) ? "video" : /\.(mp3|wav|ogg|m4a)$/i.test(u) ? "audio" : "image", url: u });
+  }
+  studioBusy = true;
+  $("studioGo").disabled = true;
+  const t0 = Date.now();
+  let buf = "";
+  try {
+    const r = await fetch("/api/widget", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, current: studioHtml, media }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Error ${r.status}`);
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      $("studioStatus").textContent = `Writing… ${buf.length.toLocaleString()} characters, ${Math.round((Date.now() - t0) / 1000)}s`;
+    }
+    const html = cleanHtml(buf);
+    if (!/<\w/.test(html)) throw new Error("The AI did not return a widget. Try again.");
+    if (studioHtml) studioHist.push(studioHtml);
+    studioShow(html);
+    $("studioGo").textContent = "Change it";
+    $("studioStatus").textContent = `Done in ${Math.round((Date.now() - t0) / 1000)}s. Describe a change and tap Change it, or save it.`;
+    $("studioPrompt").value = "";
+  } catch (e) {
+    $("studioStatus").textContent = e.message || "Something went wrong.";
+  } finally {
+    studioBusy = false;
+    $("studioGo").disabled = false;
+  }
+  studioLastPrompt = prompt;
+});
+let studioLastPrompt = "";
+
+$("studioUndo").addEventListener("click", () => {
+  if (studioHist.length) studioShow(studioHist.pop());
+});
+
+$("studioSave").addEventListener("click", () => {
+  if (!studioHtml) return;
+  const prompt = studioLastPrompt || studioItem?.meta?.prompt || "AI widget";
+  if (studioItem) {
+    studioItem.text = studioHtml;
+    studioItem.meta = { ...studioItem.meta, ai: true, prompt };
+    save();
+    renderAll();
+  } else {
+    addItem({ type: "html", text: studioHtml, title: prompt.slice(0, 60), meta: { ai: true, prompt } });
+  }
+  closeStudio();
+  toast("Saved");
+});
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !studio.hidden && !el.dlg.open) closeStudio(); });
+
 // ---------- widgets ----------
 const KINDS = {
+  ai: ["Custom, made by AI", "", () => ""],
   weather: ["Weather", "City, e.g. Paris", (v) => `weather ${v}`],
   clock: ["World clock", "City, e.g. Tokyo", (v) => `time ${v}`],
   timer: ["Timer or stopwatch", "Minutes, e.g. 10 (empty = stopwatch)", (v) => (v ? `timer ${v}` : "stopwatch")],
@@ -735,16 +861,19 @@ $("widgets").addEventListener("click", async () => {
   const kind = h("select", { name: "k" }, Object.entries(KINDS).map(([k, v]) => h("option", { value: k, text: v[0] })));
   const input = h("input", { name: "v", maxlength: 80, autocomplete: "off", autocapitalize: "off" });
   const zones = h("datalist", { id: "zones" }, (Intl.supportedValuesOf?.("timeZone") || []).map((z) => h("option", { value: z })));
+  const details = field("Details", input);
   const sync = () => {
+    details.hidden = kind.value === "ai";
     input.placeholder = KINDS[kind.value][1];
     kind.value === "clock" ? input.setAttribute("list", "zones") : input.removeAttribute("list");
     input.required = ["weather", "clock", "price"].includes(kind.value);
   };
   kind.addEventListener("change", sync);
   sync();
-  const r = await dialog((f) => f.append(h("h2", { text: "Add a widget" }), field("Kind", kind), field("Details", input), zones,
-    h("div", { class: "row" }, btn("Cancel", "no"), btn("Add", "ok", "solid"))));
+  const r = await dialog((f) => f.append(h("h2", { text: "Add a widget" }), field("Kind", kind), details, zones,
+    h("div", { class: "row" }, btn("Cancel", "no"), btn("Next", "ok", "solid"))));
   if (r !== "ok") return;
+  if (kind.value === "ai") return openStudio();
   const d = detect(KINDS[kind.value][2](input.value.trim()));
   if (!d || d.type !== kind.value) return toast("Could not understand that. Check the spelling.");
   addItem(d);

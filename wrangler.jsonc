@@ -8,6 +8,7 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
   },
+  "ai": { "binding": "AI" },
   "kv_namespaces": [
     { "binding": "BOARDS", "id": "1c5e111a93d348fca5ceef0156ade48c" }
   ]
